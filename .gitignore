@@ -1,0 +1,48 @@
+# IDE config files
+.pydevproject
+.project
+.idea/
+.vscode/
+
+# virtualenv
+.venv
+venv/
+.python-version
+
+# OS generated files
+.DS_Store
+*:Zone.Identifier
+Thumbs.db
+Thumbs.db:encryptable
+
+# Files generated during build, test and deployment
+.coverage
+*.dll
+*.dylib
+*.exe
+*.pyc
+*.pyd
+*.so
+*.mo
+appxmanifest.xml
+build/
+coverage.xml
+dist/
+installer/picard-setup.nsi
+installer/i18n/out/*.nsh
+locale/
+org.musicbrainz.Picard.appdata.xml
+org.musicbrainz.Picard.desktop
+picard.egg-info
+po/attributes/attributes.pot
+po/countries/countries.pot
+scripts/picard
+/tagger.py
+win-version-info.txt
+
+# Other files
+.*.sw[a-z]
+*~
+appledev.p12
+build.cfg
+.weblate.ini
