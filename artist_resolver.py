@@ -197,53 +197,54 @@ class Artist:
 
 
 class ArtistResolver(QObject):
-    finished = pyqtSignal(object)  # Signal to indicate all web requests are done
+  finished = pyqtSignal(object)  # Signal to indicate all web requests are done
+  
+  # Shared cache and lock for thread-safe access
+  artist_cache = {}
+  artist_queue = WebrequestQueue()
+
+  def __init__(self, album, track, artists):
+    super().__init__()
+    self.album = album
+    self.track = track
+    self.artists = self.process_artists(artists)
+
+
+  def process_artists(self, artistCredit):
+    processed = []
+
+    for credit in artistCredit:
+      if ('type' in credit['artist'] and credit['artist']['type'].lower() == 'character') and ('joinphrase' in credit and 'cv' in credit['joinphrase'].lower()):
+        continue
+
+      processed.append(Artist.create(self, self.album, credit))
+    return processed
+
+  def get_included_artists(self):
+    result = []
+    for artist in self.artists:
+      result.extend(artist.get_included_artists())
+
+    return result
+
+  def get_unresolved_artists(self):
+    result = []
+    for artist in self.artists:
+      result.extend(artist.get_unresolved_artists())
     
-    # Shared cache and lock for thread-safe access
-    artist_cache = {}
-    artist_queue = WebrequestQueue()
+    return result
 
-    def __init__(self, album, track, artists):
-        super().__init__()
-        self.album = album
-        self.track = track
-        self.artists = self.process_artists(artists)
-
-    def process_artists(self, artistCredit):
-      processed = []
-
-      for credit in artistCredit:
-        if ('type' in credit['artist'] and credit['artist']['type'].lower() == 'character') and ('joinphrase' in credit and 'cv' in credit['joinphrase'].lower()):
-          continue
-
-        processed.append(Artist.create(self, self.album, credit))
-      return processed
-
-    def get_included_artists(self):
-      result = []
-      for artist in self.artists:
-        result.extend(artist.get_included_artists())
-
-      return result
-
-    def get_unresolved_artists(self):
-      result = []
-      for artist in self.artists:
-        result.extend(artist.get_unresolved_artists())
-      
-      return result
-
-    def resolve_artists(self):
-        unresolved_artists = self.get_unresolved_artists()
-        
-        if not unresolved_artists:
-            log.debug(f"no unprocessed artists left to traverse ({self.track['title']})")
-            included_artists = self.get_included_artists()
-            resolved_artists_string = '; '.join([artist.name for artist in included_artists])
-            self.finished.emit(resolved_artists_string)
-            return
-        
-        unresolved_artists[0].resolve_relations()
+  def resolve_artists(self):
+    unresolved_artists = self.get_unresolved_artists()
+    
+    if not unresolved_artists:
+      log.debug(f"no unprocessed artists left to traverse ({self.track['title']})")
+      included_artists = self.get_included_artists()
+      resolved_artists_string = '; '.join([artist.name for artist in included_artists])
+      self.finished.emit(resolved_artists_string)
+      return
+    
+    unresolved_artists[0].resolve_relations()
 
 # def process_artists(artistCredit, sourceRelation = None):
 #   processed = []
