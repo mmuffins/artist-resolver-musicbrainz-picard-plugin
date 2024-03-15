@@ -210,12 +210,12 @@ class ArtistResolver(QObject):
       if isResolved is False:
         return
     
-    log.debug(f"Finished resolving artists for track ({track['title']})")
+    log.debug(f"Finished resolving artists for track {track['title']} in {album.id}")
     # TODO: build json object with artist and send finished signal
 
     # included_artists = self.get_included_artists()
     # resolved_artists_string = '; '.join([artist.name for artist in included_artists])
-    self.finished.emit('aaafffeee')
+    self.finished.emit(f"{track['title']} in {album.id}")
   
   def get_artist_relations(self, album, track, artistId):
     # log.debug(f"get_artist_relations {track['title']}, {artistId}")
@@ -272,7 +272,7 @@ def track_artist_processor(album, metadata, track, release):
   resolver.resolve_artists(album, track)
 
 def track_finished(resolved_artists, metadata, track, album):
-  log.debug(f"process_finished ({track['title']})")
+  log.debug(f"process_finished {track['title']} in {album.id}")
 
   metadata['resolved_artists'] = resolved_artists
   album._requests -= 1
