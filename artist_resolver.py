@@ -1,5 +1,4 @@
 # TODO: Limit traversal depth
-# TODO: fix get_included_artists only returning root artist
 # TODO: Check how to get translations
 
 
@@ -19,7 +18,7 @@ from PyQt5.QtCore import QObject, pyqtSignal
 
 
 MAX_TRAVERSAL_DEPTH = 3
-TRAVERSE_RELATION_TYPES_BLACKLIST = ['subgroup', 'Person']
+TRAVERSE_RELATION_TYPES_BLACKLIST = ['subgroup']
 MB_DOMAIN = 'musicbrainz.org'
 ratecontrol.set_minimum_delay(MB_DOMAIN, 2000) # 0.5 requests per second
 
@@ -49,7 +48,11 @@ class WebrequestQueue(LockableObject):
         self.lock_for_write()
         try:
             if name in self.queue:
-                self.queue[name].append(value)
+                queueItems = self.queue[name]
+                if not any(sublist[0].id == value[0].id and sublist[1]['id'] == value[1]['id'] for sublist in queueItems if len(sublist) > 1):
+                  # Only enqueue a new item if the album and track id doesn't already exist in the queue
+                  self.queue[name].append(value)
+                
                 value = False
             else:
                 self.queue[name] = [value]
@@ -69,261 +72,208 @@ class WebrequestQueue(LockableObject):
       finally:
         self.unlock()
 
+class Relation:
+  def __init__(self, relation_data):
+    self.artist = None
+    self.direction = relation_data.get('direction', '')
+    self.targetType = relation_data.get('target-type', '')
+    self.type = relation_data.get('type', '')
+    self.id = self.get_target_id(relation_data)
+
+  def get_target_id(self, relation_data):
+    if 'artist' in relation_data:
+      return relation_data['artist']['id']
+    
+    log.error(f"Relation of type {self.type} with target type {self.targetType} has no artist property.")
+    return ''
+
 class Artist:
-  def __init__(self, artistResolver, album, name='', type_='', disambiguation='', sort_name='', id_='', aliases=None, type_id='', joinphrase='', relation_direction='', relation_target_type='', relation_type_id='', relation_type=''):
+  def __init__(self, name='', type_='', disambiguation='', sort_name='', id_='', aliases=None, type_id='', relations=None):
     self.name = name
-    self.artistResolver = artistResolver
-    self.artistCache = ArtistResolver.artist_cache
-    self.webrequestQueue = ArtistResolver.artist_queue
-    self.album = album
     self.type = type_
     self.disambiguation = disambiguation
     self.sort_name = sort_name
     self.id = id_
     self.aliases = aliases if aliases is not None else []
     self.type_id = type_id
-    self.joinphrase = joinphrase
-    self.relation_direction = relation_direction
-    self.relation_target_type = relation_target_type
-    self.relation_type_id = relation_type_id
-    self.relation_type = relation_type
-    self.relations = None
-    self.Include = True
-
-    self.update_type_properties()
-
-  def update_relations(self, artist_data):
-    self.disambiguation = artist_data.get('disambiguation', self.disambiguation)
-    self.sort_name = artist_data.get('sort-name', self.sort_name)
-    self.aliases = artist_data.get('aliases', self.aliases)
-    self.joinphrase = artist_data.get('joinphrase', self.joinphrase)
-    # Process relations
-    self.relations = []
-    
-    # only fetch backward relations to prevent getting into relation loops
-    for relation in [rel for rel in artist_data.get('relations', []) if rel.get('direction') == 'backward']:
-      relation_artist_data = relation['artist']
-      relation_artist_data['relation_type'] = relation.get('type')
-      relation_artist_data['relation_direction'] = relation.get('direction')
-      relation_artist_data['relation_target_type'] = relation.get('target-type')
-      relation_artist_data['relation_type_id'] = relation.get('type-id')
-      relation_artist_data['relation_type'] = relation.get('type')
-      relation_artist = Artist.create(self.artistResolver, self.album, relation_artist_data)
-      self.relations.append(relation_artist)
+    self.relations = self.process_relations(relations)
+    # self.Include = True
 
   @staticmethod
-  def create(artistResolver, album, artist_data):
+  def create(artist_data):
     name = artist_data.get('name', '')
-    joinphrase = artist_data.get('joinphrase', '')
-    artist_info = artist_data.get('artist', {}) if 'artist' in artist_data else artist_data
-    type_ = artist_info.get('type', '')
-    disambiguation = artist_info.get('disambiguation', '')
-    sort_name = artist_info.get('sort-name', '')
-    id_ = artist_info.get('id', '')
-    aliases = artist_info.get('aliases', [])
-    type_id = artist_info.get('type-id', '')
-    relation_direction = artist_info.get('relation_direction', '')
-    relation_target_type = artist_info.get('target_type', '')
-    relation_type_id = artist_info.get('relation_type_id', '')
-    relation_type = artist_info.get('relation_type', '')
+    type_ = artist_data.get('type', '')
+    disambiguation = artist_data.get('disambiguation', '')
+    sort_name = artist_data.get('sort-name', '')
+    id_ = artist_data.get('id', '')
+    aliases = artist_data.get('aliases', [])
+    type_id = artist_data.get('type-id', '')
+    relations = artist_data.get('relations', [])
 
-    return Artist(artistResolver, album, name, type_, disambiguation, sort_name, id_, aliases, type_id, joinphrase, relation_direction, relation_target_type, relation_type_id, relation_type)
+    return Artist(name, type_, disambiguation, sort_name, id_, aliases, type_id, relations)
 
-  def update_type_properties(self):
-    if self.type == "Person":
-      self.Include = True
-      self.relations = []
-    
-    if self.relation_type in TRAVERSE_RELATION_TYPES_BLACKLIST:
-      self.relations = []
-
-  def get_unresolved_artists(self, result = None):
-    if result is None:
-      result = []
-
-    if self.relations is None:
-      result.append(self)
-      return result
-
-    for artist in self.relations:
-      artist.get_unresolved_artists(result),
-
-    return result
-  
-  def get_included_artists(self, result = None):
-    if result is None:
-      result = []
-    
-    if self.Include is True:
-      result.append(self)
-
-    if self.relations is None:
+  def process_relations(self, relations):
+    result = []
+    if relations is None:
       return result
     
-    for artist in self.relations:
-      artist.get_unresolved_artists(result)
+    for relation in relations:
+      if relation['direction'].lower() != 'backward':
+        continue
 
+
+      if relation['type'] in TRAVERSE_RELATION_TYPES_BLACKLIST:
+        continue
+
+      # if relation.type == "Person":
+      #   self.Include = True
+
+      result.append(Relation(relation))
+    
     return result
 
-  def resolve_relations(self):
-    unresolved = self.get_unresolved_artists()
-
-    if not unresolved:
-      self.artistResolver.resolve_artists()
-      return
+  # def get_included_artists(self, result = None):
+  #   if result is None:
+  #     result = []
     
-    unresolved[0].fetch_relations()
+  #   if self.Include is True:
+  #     result.append(self)
 
-  def fetch_relations(self):
-    url = f"https://{MB_DOMAIN}/ws/2/artist/{self.id}/?inc=artist-rels&fmt=json"
-
-    if self.id in self.artistCache:
-      self.update_relations(self.artistCache[self.id])
-      self.resolve_relations()
-    else:
-      if self.webrequestQueue.append(self.id, self):
-        self.album.tagger.webservice.get_url(url=url, handler=partial(self.process_artist_relations_response, self.id, self.album))
-
-  def process_artist_relations_response(self, artistId, album, response, reply, error):
-    if error:
-      log.error("Error fetching artist details: %s", error)
-      return
+  #   if self.relations is None:
+  #     return result
     
-    self.artistCache[artistId] = response
-    checkTracks = self.webrequestQueue.remove(artistId)
+  #   for artist in self.relations:
+  #     artist.get_unresolved_artists(result)
 
-    for artist in checkTracks:
-      ddd(artist.artistResolver)
-
+  #   return result
 
 class ArtistResolver(QObject):
   finished = pyqtSignal(object)  # Signal to indicate all web requests are done
   
   # Shared cache and lock for thread-safe access
-  artist_cache = {}
   artist_queue = WebrequestQueue()
+  artist_cache = {}
 
-  def __init__(self, album, track, artists):
+  def __init__(self):
     super().__init__()
-    self.album = album
-    self.track = track
-    self.artists = self.process_artists(artists)
 
+  def track_artist_processor(self, album, metadata, track, release):
+    log.debug(f"start processing {track['title']}, requests: {album._requests}")
+    album._requests += 1
+    self.finished.connect(lambda resolved_artists: self.track_finished(resolved_artists, metadata, track, album))
+    self.resolve_artists(album, track)
 
-  def process_artists(self, artistCredit):
-    processed = []
+  def track_finished(self, resolved_artists, metadata, track, album):
+    log.debug(f"process_finished ({track['title']})")
 
-    for credit in artistCredit:
-      if ('type' in credit['artist'] and credit['artist']['type'].lower() == 'character') and ('joinphrase' in credit and 'cv' in credit['joinphrase'].lower()):
-        continue
+    metadata['resolved_artists'] = resolved_artists
+    album._requests -= 1
 
-      processed.append(Artist.create(self, self.album, credit))
-    return processed
+    log.debug(f"albumrequests count {album._requests}") 
 
-  def get_included_artists(self):
+    # Workaround for an endless loop where no artist data needs to be retrieved
+    # If finalize_loading is called before tracks are loaded, which is likely
+    # to happen if the plugin doesn't need to load any data and therefore finishes immediatly,
+    # it will try to load the tracks again, which calls register_track_metadata_processor,
+    # triggering an endless loop
+    # I can't also remove it since it's needed for long running relation lookups because it tells
+    # the application that everything is finished
+    if album._tracks_loaded:
+      album._finalize_loading(None)
+
+  def get_track_artists(self, album, track):
+    log.debug('get_track-artists')
+
     result = []
-    for artist in self.artists:
-      result.extend(artist.get_included_artists())
+    for credit in track['artist-credit']:
+      # if (('artist' in credit) and
+      #   ('type' in credit['artist'] and credit['artist']['type'].lower() == 'character') and
+      #   ('joinphrase' in credit and 'cv' in credit['joinphrase'].lower())):
 
+      if ('artist' in credit):
+        result.append(credit['artist']['id'])
     return result
 
-  def get_unresolved_artists(self):
-    result = []
-    for artist in self.artists:
-      result.extend(artist.get_unresolved_artists())
+  def is_artist_resolved(self, artist):
+    if artist is None:
+      log.debug(f"is_artist_resolved: false 1")
+      return False
     
+    for relation in artist.relations:
+      unresolved = self.is_artist_resolved(relation.artist)
+      if unresolved is False:
+        log.debug(f"is_artist_resolved: false 2")
+        return False
+    
+    log.debug(f"is_artist_resolved: true")
+    return True
+
+  def resolve_artists(self, album, track):
+    log.debug(f"resolve_artists {track['title']}")
+
+    result = []
+    track_artist_ids = self.get_track_artists(album, track)
+    for artistId in track_artist_ids:
+      result.append(self.get_artist_relations(album, track, artistId))
+    
+    for artist in result:
+      isResolved = self.is_artist_resolved(artist)
+    
+      if isResolved is False:
+        return
+    
+    log.debug(f"Finished resolving artists for track ({track['title']})")
+    # TODO: build json object with artist and send finished signal
+
+    # included_artists = self.get_included_artists()
+    # resolved_artists_string = '; '.join([artist.name for artist in included_artists])
+    self.finished.emit('aaafffeee')
+    return
+  
+  def get_artist_relations(self, album, track, artistId):
+    log.debug(f"get_artist_relations {track['title']}, {artistId}")
+
+    result = None
+    if (artistId not in self.artist_cache):
+      self.get_artist_details(album, track, artistId)
+      return result
+    
+    result = self.artist_cache[artistId]
+    for relation in result.relations:
+      if relation.artist != []:
+        relation.artist = self.get_artist_relations(album, track, relation.id)
     return result
 
-  def resolve_artists(self):
-    unresolved_artists = self.get_unresolved_artists()
-    
-    if not unresolved_artists:
-      log.debug(f"no unprocessed artists left to traverse ({self.track['title']})")
-      included_artists = self.get_included_artists()
-      resolved_artists_string = '; '.join([artist.name for artist in included_artists])
-      self.finished.emit(resolved_artists_string)
+  def get_artist_details(self, album, track, artistId):
+    log.debug(f"get_artist_details {track['title']}, {artistId}")
+
+    url = f"https://{MB_DOMAIN}/ws/2/artist/{artistId}/?inc=artist-rels+aliases&fmt=json"
+
+    if self.artist_queue.append(artistId, (album, track)):
+      album.tagger.webservice.get_url(url=url, handler=partial(self.process_artist_request_response, artistId))
+
+  def process_artist_request_response(self, artistId, response, reply, error):
+    if error:
+      log.error("Error fetching artist details: %s", error)
       return
     
-    unresolved_artists[0].resolve_relations()
+    log.debug(f"process_artist_request_response {artistId}")
 
-# def process_artists(artistCredit, sourceRelation = None):
-#   processed = []
-#   procX = []
+    artist = Artist.create(response)
+    self.artist_cache[artistId] = artist
+    resolveTracks = self.artist_queue.remove(artistId)
 
-#   for credit in artistCredit:
-#     procX.append(Artist.create_from_data(credit))
-#     artist = flatten_artist_credit(credit, sourceRelation)
-    
-#     if artist['type'] == 'Person':
-#       # artist['resolve'] = True
-#       artist['relations'] = []
+    for album, track in resolveTracks:
+      self.resolve_artists(album, track)
 
-#     if 'relation-type' in artist and artist['relation-type'] in TRAVERSE_RELATION_TYPES_BLACKLIST:
-#       # artist['resolve'] = False
-#       artist['relations'] = []
+  # def process_artists(self, artistCredit):
+  #   processed = []
 
-#     processed.append(artist)
-    
-#   return processed
+  #   for credit in artistCredit:
+  #     if ('type' in credit['artist'] and credit['artist']['type'].lower() == 'character') and ('joinphrase' in credit and 'cv' in credit['joinphrase'].lower()):
+  #       continue
 
-# def flatten_artist_credit(credit, sourceRelation = None):
-#   artist = credit
-#   if 'artist' in credit:
-#     artist = credit['artist']
-    
-#   # if sourceRelation is None: 
-#   #   artist['relation-source'] = None
-#   #   artist['relation-target-credit'] = None
-#   #   artist['relation-direction'] = None
-#   #   artist['relation-type-id'] = None
-#   #   artist['relation-target-type'] = None
-#   #   artist['relation-type'] = None
-#   #   artist['relation-source-credit'] = None
-#   # else:
-#   #   artist['relation-source'] = sourceRelation
-#   #   artist['relation-target-credit'] = credit['target-credit']
-#   #   artist['relation-direction'] = credit['direction']
-#   #   artist['relation-type-id'] = credit['type-id']
-#   #   artist['relation-target-type'] = credit['target-type']
-#   #   artist['relation-type'] = credit['type']
-#   #   artist['relation-source-credit'] = credit['source-credit']
+  #     processed.append(Artist.create(self, self.album, credit))
+  #   return processed
 
-#   if 'include' not in artist:
-#     artist['include'] = True
-
-#   # if 'resolve' not in artist:
-#   #     artist['resolve'] = True
-#   return artist
-
-def ddd(resolver):
-  resolver.resolve_artists()
-
-def process_finished(resolved_artists, metadata, track, album):
-  log.debug(f"process_finished ({track['title']})")
-
-  metadata['resolved_artists'] = resolved_artists
-  album._requests -= 1
-
-  log.debug(f"albumrequests count {album._requests}") 
-
-  # Workaround for an endless loop where no artist data needs to be retrieved
-  # If finalize_loading is called before tracks are loaded, which is likely
-  # to happen if the plugin doesn't need to load any data and therefore finishes immediatly,
-  # it will try to load the tracks again, which calls register_track_metadata_processor,
-  # triggering an endless loop
-  # I can't also remove it since it's needed for long running relation lookups because it tells
-  # the application that everything is finished
-  if album._tracks_loaded:
-    album._finalize_loading(None)
-
-def track_artist_processor(album, metadata, track, release):
-    log.debug(f"start processing {track['title']}, requests: {album._requests}")
-    # log.debug(f"requests:1 {album._requests}")
-    album._requests += 1
-    resolver = ArtistResolver(album, track, track['artist-credit'])
-    resolver.finished.connect(lambda resolved_artists: process_finished(resolved_artists, metadata, track, album))
-    ddd(resolver)
-    # log.debug(f"requests:2 {album._requests}")
-
-
-register_track_metadata_processor(track_artist_processor)
+register_track_metadata_processor(ArtistResolver().track_artist_processor)
