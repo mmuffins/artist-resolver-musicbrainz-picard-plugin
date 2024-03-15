@@ -44,6 +44,13 @@ class WebrequestQueue(LockableObject):
         finally:
             self.unlock()
 
+    def hasTrack(self, album, track):
+      for artistId in self.queue:
+        queueItems = self.queue[artistId]
+        if any(sublist[0].id == album.id and sublist[1]['id'] == track['id'] for sublist in queueItems if len(sublist) > 1):
+          return True
+      return False
+
     def append(self, name, value):
         self.lock_for_write()
         try:
@@ -157,30 +164,6 @@ class ArtistResolver(QObject):
   def __init__(self):
     super().__init__()
 
-  def track_artist_processor(self, album, metadata, track, release):
-    log.debug(f"start processing {track['title']}, requests: {album._requests}")
-    album._requests += 1
-    self.finished.connect(lambda resolved_artists: self.track_finished(resolved_artists, metadata, track, album))
-    self.resolve_artists(album, track)
-
-  def track_finished(self, resolved_artists, metadata, track, album):
-    log.debug(f"process_finished ({track['title']})")
-
-    metadata['resolved_artists'] = resolved_artists
-    album._requests -= 1
-
-    log.debug(f"albumrequests count {album._requests}") 
-
-    # Workaround for an endless loop where no artist data needs to be retrieved
-    # If finalize_loading is called before tracks are loaded, which is likely
-    # to happen if the plugin doesn't need to load any data and therefore finishes immediatly,
-    # it will try to load the tracks again, which calls register_track_metadata_processor,
-    # triggering an endless loop
-    # I can't also remove it since it's needed for long running relation lookups because it tells
-    # the application that everything is finished
-    if album._tracks_loaded:
-      album._finalize_loading(None)
-
   def get_track_artists(self, album, track):
     log.debug('get_track-artists')
 
@@ -196,19 +179,24 @@ class ArtistResolver(QObject):
 
   def is_artist_resolved(self, artist):
     if artist is None:
-      log.debug(f"is_artist_resolved: false 1")
+      # log.debug(f"is_artist_resolved: false 1")
       return False
     
     for relation in artist.relations:
       unresolved = self.is_artist_resolved(relation.artist)
       if unresolved is False:
-        log.debug(f"is_artist_resolved: false 2")
+        # log.debug(f"is_artist_resolved: false 2")
         return False
     
-    log.debug(f"is_artist_resolved: true")
+    # log.debug(f"is_artist_resolved: true")
     return True
 
   def resolve_artists(self, album, track):
+    if self.artist_queue.hasTrack(album, track):
+      # Only proceed to check if all artists are resolved if no artists for this track are in the lookup queue
+      log.debug(f"resolve_artists {track['title']}: skipping due to open items in queue")
+      return
+
     log.debug(f"resolve_artists {track['title']}")
 
     result = []
@@ -228,10 +216,9 @@ class ArtistResolver(QObject):
     # included_artists = self.get_included_artists()
     # resolved_artists_string = '; '.join([artist.name for artist in included_artists])
     self.finished.emit('aaafffeee')
-    return
   
   def get_artist_relations(self, album, track, artistId):
-    log.debug(f"get_artist_relations {track['title']}, {artistId}")
+    # log.debug(f"get_artist_relations {track['title']}, {artistId}")
 
     result = None
     if (artistId not in self.artist_cache):
@@ -264,6 +251,7 @@ class ArtistResolver(QObject):
     resolveTracks = self.artist_queue.remove(artistId)
 
     for album, track in resolveTracks:
+      log.debug(f"call resolve_artists ({artistId}) for  {track['title']} ")
       self.resolve_artists(album, track)
 
   # def process_artists(self, artistCredit):
@@ -276,4 +264,29 @@ class ArtistResolver(QObject):
   #     processed.append(Artist.create(self, self.album, credit))
   #   return processed
 
-register_track_metadata_processor(ArtistResolver().track_artist_processor)
+def track_artist_processor(album, metadata, track, release):
+  log.debug(f"start processing {track['title']}, requests: {album._requests}")
+  resolver = ArtistResolver()
+  album._requests += 1
+  resolver.finished.connect(lambda resolved_artists: track_finished(resolved_artists, metadata, track, album))
+  resolver.resolve_artists(album, track)
+
+def track_finished(resolved_artists, metadata, track, album):
+  log.debug(f"process_finished ({track['title']})")
+
+  metadata['resolved_artists'] = resolved_artists
+  album._requests -= 1
+
+  log.debug(f"albumrequests count {album._requests}") 
+  # Workaround for an endless loop where no artist data needs to be retrieved
+  # If finalize_loading is called before tracks are loaded, which is likely
+  # to happen if the plugin doesn't need to load any data and therefore finishes immediatly,
+  # it will try to load the tracks again, which calls register_track_metadata_processor,
+  # triggering an endless loop
+  # I can't also remove it since it's needed for long running relation lookups because it tells
+  # the application that everything is finished
+  if album._tracks_loaded:
+    album._finalize_loading(None)
+
+
+register_track_metadata_processor(track_artist_processor)
