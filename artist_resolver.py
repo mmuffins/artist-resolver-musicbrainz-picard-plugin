@@ -6,7 +6,7 @@ PLUGIN_NAME = 'Resolve Character Artists'
 PLUGIN_AUTHOR = 'Your Name'
 PLUGIN_DESCRIPTION = 'Resolves fictional characters to real artists.'
 PLUGIN_VERSION = '0.2'
-PLUGIN_API_VERSIONS = ['2.0', '2.1', '2.2', '2.3', '2.4', '2.5', '2.6', '2.9', '2.10', '2.11', '3.0']
+PLUGIN_API_VERSIONS = ['2.9', '2.10', '2.11', '3.0']
 
 from picard import log
 from picard.metadata import register_track_metadata_processor
