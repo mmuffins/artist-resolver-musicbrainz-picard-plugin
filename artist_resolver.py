@@ -236,7 +236,7 @@ class ArtistResolver(QObject):
 
     url = f"https://{MB_DOMAIN}/ws/2/artist/{artistId}/?inc=artist-rels+aliases&fmt=json"
 
-    if self.artist_queue.append(artistId, (album, track)):
+    if self.artist_queue.append(artistId, (album, track, self)):
       album.tagger.webservice.get_url(url=url, handler=partial(self.process_artist_request_response, artistId))
 
   def process_artist_request_response(self, artistId, response, reply, error):
@@ -250,9 +250,9 @@ class ArtistResolver(QObject):
     self.artist_cache[artistId] = artist
     resolveTracks = self.artist_queue.remove(artistId)
 
-    for album, track in resolveTracks:
+    for album, track, resolver in resolveTracks:
       log.debug(f"call resolve_artists ({artistId}) for  {track['title']} ")
-      self.resolve_artists(album, track)
+      resolver.resolve_artists(album, track)
 
   # def process_artists(self, artistCredit):
   #   processed = []
