@@ -194,10 +194,10 @@ class ArtistResolver(QObject):
   def resolve_artists(self, album, track):
     if self.artist_queue.hasTrack(album, track):
       # Only proceed to check if all artists are resolved if no artists for this track are in the lookup queue
-      log.debug(f"resolve_artists {track['title']} ({self.track['title']}): skipping due to open items in queue")
+      log.debug(f"resolve_artists {track['title']}: skipping due to open items in queue")
       return
 
-    log.debug(f"resolve_artists {track['title']} ({self.track['title']})")
+    log.debug(f"resolve_artists {track['title']}")
 
     result = []
     track_artist_ids = self.get_track_artists(album, track)
@@ -218,7 +218,7 @@ class ArtistResolver(QObject):
     self.finished.emit(f"{track['title']} in {album.id}")
   
   def get_artist_relations(self, album, track, artistId):
-    log.debug(f"get_artist_relations {track['title']} ({self.track['title']}), {artistId}")
+    log.debug(f"get_artist_relations {track['title']}, {artistId}")
 
     result = None
     if (artistId not in self.artist_cache):
@@ -232,7 +232,7 @@ class ArtistResolver(QObject):
     return result
 
   def get_artist_details(self, album, track, artistId):
-    log.debug(f"get_artist_details {track['title']} ({self.track['title']}), {artistId}")
+    log.debug(f"get_artist_details {track['title']}, {artistId}")
 
     url = f"https://{MB_DOMAIN}/ws/2/artist/{artistId}/?inc=artist-rels+aliases&fmt=json"
 
@@ -245,7 +245,6 @@ class ArtistResolver(QObject):
       log.error("Error fetching artist details: %s", error)
       return
     
-
     log.debug(f"process_artist_request_response self:{id(self)}, {artistId}")
 
     artist = Artist.create(response)
@@ -282,7 +281,7 @@ def track_finished(resolved_artists, metadata, track, album):
   log.debug(f"albumrequests count {album._requests}") 
   # Workaround for an endless loop where no artist data needs to be retrieved
   # If finalize_loading is called before tracks are loaded, which is likely
-  # to happen if the plugin doesn't need to load any data and therefore finishes immediatly,
+  # to happen if the plugin doesn't need to load any data and therefore finishes immediately,
   # it will try to load the tracks again, which calls register_track_metadata_processor,
   # triggering an endless loop
   # I can't also remove it since it's needed for long running relation lookups because it tells
