@@ -194,10 +194,10 @@ class ArtistResolver(QObject):
   def resolve_artists(self, album, track):
     if self.artist_queue.hasTrack(album, track):
       # Only proceed to check if all artists are resolved if no artists for this track are in the lookup queue
-      log.debug(f"resolve_artists {track['title']}: skipping due to open items in queue")
+      log.debug(f"resolve_artists {track['title']} ({self.track['title']}): skipping due to open items in queue")
       return
 
-    log.debug(f"resolve_artists {track['title']}")
+    log.debug(f"resolve_artists {track['title']} ({self.track['title']})")
 
     result = []
     track_artist_ids = self.get_track_artists(album, track)
@@ -218,7 +218,7 @@ class ArtistResolver(QObject):
     self.finished.emit(f"{track['title']} in {album.id}")
   
   def get_artist_relations(self, album, track, artistId):
-    # log.debug(f"get_artist_relations {track['title']}, {artistId}")
+    log.debug(f"get_artist_relations {track['title']} ({self.track['title']}), {artistId}")
 
     result = None
     if (artistId not in self.artist_cache):
@@ -232,11 +232,12 @@ class ArtistResolver(QObject):
     return result
 
   def get_artist_details(self, album, track, artistId):
-    log.debug(f"get_artist_details {track['title']}, {artistId}")
+    log.debug(f"get_artist_details {track['title']} ({self.track['title']}), {artistId}")
 
     url = f"https://{MB_DOMAIN}/ws/2/artist/{artistId}/?inc=artist-rels+aliases&fmt=json"
 
     if self.artist_queue.append(artistId, (album, track, self)):
+      log.debug(f"call webrequest self:{id(self)} {track['title']}, {artistId}")
       album.tagger.webservice.get_url(url=url, handler=partial(self.process_artist_request_response, artistId))
 
   def process_artist_request_response(self, artistId, response, reply, error):
@@ -244,7 +245,8 @@ class ArtistResolver(QObject):
       log.error("Error fetching artist details: %s", error)
       return
     
-    log.debug(f"process_artist_request_response {artistId}")
+
+    log.debug(f"process_artist_request_response self:{id(self)}, {artistId}")
 
     artist = Artist.create(response)
     self.artist_cache[artistId] = artist
