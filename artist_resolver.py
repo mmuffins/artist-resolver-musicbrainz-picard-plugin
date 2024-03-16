@@ -2,11 +2,12 @@
 # TODO: self.finished.emit in resolve_artists returns dummy string, replace with actual output
 # TODO: return additional json with all relevant data that can be sent to artist normaliser
 # TODO: Add localized artists, use sort artist if need be
+# TODO: Check licensing
 
 PLUGIN_NAME = 'Resolve Character Artists'
-PLUGIN_AUTHOR = 'Your Name'
-PLUGIN_DESCRIPTION = 'Resolves fictional characters to real artists.'
-PLUGIN_VERSION = '0.2'
+PLUGIN_AUTHOR = 'mmuffins'
+PLUGIN_DESCRIPTION = 'Resolves fictional entities to real artists.'
+PLUGIN_VERSION = '0.5'
 PLUGIN_API_VERSIONS = ['2.9', '2.10', '2.11', '3.0']
 
 from picard import log
