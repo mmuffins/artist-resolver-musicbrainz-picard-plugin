@@ -1,6 +1,7 @@
 # TODO: Limit traversal depth
-# TODO: Return actual artist json
-
+# TODO: self.finished.emit in resolve_artists returns dummy string, replace with actual output
+# TODO: return additional json with all relevant data that can be sent to artist normaliser
+# TODO: Add localized artists, use sort artist if need be
 
 PLUGIN_NAME = 'Resolve Character Artists'
 PLUGIN_AUTHOR = 'Your Name'
