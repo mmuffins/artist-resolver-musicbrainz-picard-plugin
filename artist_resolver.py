@@ -1,7 +1,6 @@
 # TODO: Limit traversal depth
 # TODO: Add localized artists, use sort artist if need be
 # TODO: Check licensing
-# TODO: Fix \uxxx characters in output
 # TODO: Add relations between artists (like cv, feat) in output array
 
 PLUGIN_NAME = 'Resolve Character Artists'
@@ -195,7 +194,7 @@ class ArtistResolver(QObject):
       artistObj = self.artist_cache[credit['artist']['id']].to_dict(self.artist_cache)
       trackArtists.append(artistObj)
 
-    return json.dumps(trackArtists)
+    return json.dumps(trackArtists, ensure_ascii=False)
   
   def all_artists_resolved(self, album, track):
     result = []
