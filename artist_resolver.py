@@ -1,8 +1,8 @@
 # TODO: Limit traversal depth
-# TODO: self.finished.emit in resolve_artists returns dummy string, replace with actual output
-# TODO: return additional json with all relevant data that can be sent to artist normaliser
 # TODO: Add localized artists, use sort artist if need be
 # TODO: Check licensing
+# TODO: Fix \uxxx characters in output
+# TODO: Add relations between artists (like cv, feat) in output array
 
 PLUGIN_NAME = 'Resolve Character Artists'
 PLUGIN_AUTHOR = 'mmuffins'
@@ -16,6 +16,7 @@ from picard.webservice import ratecontrol
 from picard.util import LockableObject
 from functools import partial
 from PyQt5.QtCore import QObject, pyqtSignal
+import json
 
 
 MAX_TRAVERSAL_DEPTH = 3
@@ -105,7 +106,6 @@ class Artist:
     self.aliases = aliases if aliases is not None else []
     self.type_id = type_id
     self.relations = self.process_relations(relations)
-    # self.Include = True
 
   @staticmethod
   def create(artist_data):
@@ -129,7 +129,6 @@ class Artist:
       if relation['direction'].lower() != 'backward':
         continue
 
-
       if relation['type'] in TRAVERSE_RELATION_TYPES_BLACKLIST:
         continue
 
@@ -140,20 +139,18 @@ class Artist:
     
     return result
 
-  # def get_included_artists(self, result = None):
-  #   if result is None:
-  #     result = []
-    
-  #   if self.Include is True:
-  #     result.append(self)
+  def to_dict(self, artistCache):
+    return {
+      "name": self.name,
+      "type": self.type,
+      "disambiguation": self.disambiguation,
+      "sort_name": self.sort_name,
+      "id": self.id,
+      "aliases": self.aliases,
+      "type_id": self.type_id,
+      "relations": [artistCache[relation.id].to_dict(artistCache) for relation in self.relations]
+    }
 
-  #   if self.relations is None:
-  #     return result
-    
-  #   for artist in self.relations:
-  #     artist.get_unresolved_artists(result)
-
-  #   return result
 
 class ArtistResolver(QObject):
   finished = pyqtSignal(object)  # Signal to indicate all web requests are done
@@ -192,6 +189,26 @@ class ArtistResolver(QObject):
     # log.debug(f"is_artist_resolved: true")
     return True
 
+  def serialize_track_artists(self, album, track):
+    trackArtists = []
+    for credit in track['artist-credit']:
+      artistObj = self.artist_cache[credit['artist']['id']].to_dict(self.artist_cache)
+      trackArtists.append(artistObj)
+
+    return json.dumps(trackArtists)
+  
+  def all_artists_resolved(self, album, track):
+    result = []
+    track_artist_ids = self.get_track_artists(album, track)
+    for artistId in track_artist_ids:
+      result.append(self.get_artist_relations(album, track, artistId))
+    
+    for artist in result:
+        if False == self.is_artist_resolved(artist):
+            return False
+
+    return True
+
   def resolve_artists(self, album, track):
     if self.artist_queue.hasTrack(album, track):
       # Only proceed to check if all artists are resolved if no artists for this track are in the lookup queue
@@ -200,23 +217,13 @@ class ArtistResolver(QObject):
 
     log.debug(f"resolve_artists {track['title']}")
 
-    result = []
-    track_artist_ids = self.get_track_artists(album, track)
-    for artistId in track_artist_ids:
-      result.append(self.get_artist_relations(album, track, artistId))
-    
-    for artist in result:
-      isResolved = self.is_artist_resolved(artist)
-    
-      if isResolved is False:
-        return
+    if False == self.all_artists_resolved(album, track):
+        return False
     
     log.debug(f"Finished resolving artists for track {track['title']} in {album.id}")
-    # TODO: build json object with artist and send finished signal
 
-    # included_artists = self.get_included_artists()
-    # resolved_artists_string = '; '.join([artist.name for artist in included_artists])
-    self.finished.emit(f"{track['title']} in {album.id}")
+    resolved_artists = self.serialize_track_artists(album, track)
+    self.finished.emit(resolved_artists)
   
   def get_artist_relations(self, album, track, artistId):
     log.debug(f"get_artist_relations {track['title']}, {artistId}")
