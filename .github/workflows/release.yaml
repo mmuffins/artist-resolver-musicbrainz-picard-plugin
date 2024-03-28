@@ -39,7 +39,7 @@ jobs:
         "VERSION=$newVersion" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
         $content = $content -replace "(PLUGIN_VERSION = ')(\d+\.\d+\.\d+)(')", "`$1$newVersion`$3"
-        $content | Set-Content $infoFile -Force
+        $content | Set-Content $scriptFile -Force
     
     - name: Zip Files
       run: cd '${{ github.workspace }}' && zip -r ${{ env.EXTENSION_FILE_NAME }}.zip .
