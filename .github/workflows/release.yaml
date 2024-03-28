@@ -37,6 +37,7 @@ jobs:
 
         Write-Output "Setting version to $newVersion"
         "VERSION=$newVersion" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        "VERSION=$newVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
         $content = $content -replace "(PLUGIN_VERSION = '\d+\.\d+\.\d+')", "PLUGIN_VERSION =`'$newVersion`'"
         $content | Set-Content $scriptFile -Force
@@ -75,8 +76,8 @@ jobs:
           const {data: newRelease} = await github.rest.repos.createRelease({
             owner: context.repo.owner,
             repo: context.repo.repo,
-            name: '${{ env.VERSION }}',
-            tag_name: '${{ env.VERSION }}',
+            name: '${{ needs.build.outputs.version }}',
+            tag_name: '${{ needs.build.outputs.version }}',
             generate_release_notes: true,
             draft: false,
             prerelease: false
