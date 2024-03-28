@@ -24,6 +24,7 @@ jobs:
       run: |
         Remove-Item -Path "${{ github.workspace }}/.git" -Recurse -Force -Verbose
         Remove-Item -Path "${{ github.workspace }}/.github" -Recurse -Force -Verbose
+        Remove-Item -Path "${{ github.workspace }}/.gitignore" -Recurse -Force -Verbose
 
     - name: Set version
       id: set-version
