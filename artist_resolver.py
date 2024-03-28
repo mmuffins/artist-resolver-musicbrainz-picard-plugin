@@ -1,7 +1,4 @@
-# TODO: Limit traversal depth
-# TODO: Add localized artists, use sort artist if need be
-# TODO: Check licensing
-# TODO: Add relations between artists (like cv, feat) in output array
+# TODO: Check license
 
 PLUGIN_NAME = 'Resolve Character Artists'
 PLUGIN_AUTHOR = 'mmuffins'
@@ -166,10 +163,6 @@ class ArtistResolver(QObject):
 
     result = []
     for credit in track['artist-credit']:
-      # if (('artist' in credit) and
-      #   ('type' in credit['artist'] and credit['artist']['type'].lower() == 'character') and
-      #   ('joinphrase' in credit and 'cv' in credit['joinphrase'].lower())):
-
       if ('artist' in credit):
         result.append(credit['artist']['id'])
     return result
@@ -192,6 +185,7 @@ class ArtistResolver(QObject):
     trackArtists = []
     for credit in track['artist-credit']:
       artistObj = self.artist_cache[credit['artist']['id']].to_dict(self.artist_cache)
+      artistObj['joinphrase'] = credit['joinphrase']
       trackArtists.append(artistObj)
 
     return json.dumps(trackArtists, ensure_ascii=False)
