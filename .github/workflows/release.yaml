@@ -12,6 +12,8 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.set-version.outputs.VERSION }}
     
     steps:
     - uses: actions/checkout@v2
@@ -23,6 +25,7 @@ jobs:
         Remove-Item -Path "${{ github.workspace }}/.github" -Recurse -Force -Verbose
 
     - name: Set version
+      id: set-version
       shell: pwsh
       run: |
         $scriptFile = '${{ github.workspace }}\artist_resolver.py'
