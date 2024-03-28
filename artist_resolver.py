@@ -1,9 +1,9 @@
 # TODO: clean up logging
 # TODO: Add unit tests
 
-PLUGIN_NAME = 'Resolve Character Artists'
+PLUGIN_NAME = 'Resolve Artist Relations'
 PLUGIN_AUTHOR = 'mmuffins'
-PLUGIN_DESCRIPTION = 'Resolves fictional entities to real artists.'
+PLUGIN_DESCRIPTION = 'Provides a new property containing a json with artist details and relations.'
 PLUGIN_VERSION = '0.5'
 PLUGIN_API_VERSIONS = ['2.9', '2.10', '2.11', '3.0']
 
@@ -19,7 +19,7 @@ import json
 MAX_TRAVERSAL_DEPTH = 3
 TRAVERSE_RELATION_TYPES_BLACKLIST = ['subgroup']
 MB_DOMAIN = 'musicbrainz.org'
-ratecontrol.set_minimum_delay(MB_DOMAIN, 2000) # 0.5 requests per second
+ratecontrol.set_minimum_delay(MB_DOMAIN, 1000) # 1 request per second
 
 class WebrequestQueue(LockableObject):
     def __init__(self):
@@ -259,7 +259,7 @@ def track_artist_processor(album, metadata, track, release):
 def track_finished(resolved_artists, metadata, track, album):
   log.debug(f"process_finished {track['title']} in {album.id}")
 
-  metadata['resolved_artists'] = resolved_artists
+  metadata['artist_relations_json'] = resolved_artists
   album._requests -= 1
 
   log.debug(f"albumrequests count {album._requests}") 
