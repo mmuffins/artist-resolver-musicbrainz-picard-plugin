@@ -1,0 +1,2 @@
+# Resolve Artist Relations
+A plugin for musicbrainz picard that adds a new property to resolved tracks that contains a json array with detailed artist information and relations. Highly experimental, no support is provided.
