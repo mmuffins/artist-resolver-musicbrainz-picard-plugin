@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - 'dependabot/**'
 
 env:
   EXTENSION_FILE_NAME: artist_resolver 
