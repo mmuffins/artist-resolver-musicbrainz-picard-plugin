@@ -1,4 +1,5 @@
-# TODO: Check license
+# TODO: clean up logging
+# TODO: Add unit tests
 
 PLUGIN_NAME = 'Resolve Character Artists'
 PLUGIN_AUTHOR = 'mmuffins'
@@ -128,9 +129,6 @@ class Artist:
       if relation['type'] in TRAVERSE_RELATION_TYPES_BLACKLIST:
         continue
 
-      # if relation.type == "Person":
-      #   self.Include = True
-
       result.append(Relation(relation))
     
     return result
@@ -159,8 +157,6 @@ class ArtistResolver(QObject):
     super().__init__()
 
   def get_track_artists(self, album, track):
-    log.debug('get_track-artists')
-
     result = []
     for credit in track['artist-credit']:
       if ('artist' in credit):
@@ -169,16 +165,13 @@ class ArtistResolver(QObject):
 
   def is_artist_resolved(self, artist):
     if artist is None:
-      # log.debug(f"is_artist_resolved: false 1")
       return False
     
     for relation in artist.relations:
       unresolved = self.is_artist_resolved(relation.artist)
       if unresolved is False:
-        # log.debug(f"is_artist_resolved: false 2")
         return False
     
-    # log.debug(f"is_artist_resolved: true")
     return True
 
   def serialize_track_artists(self, album, track):
@@ -255,16 +248,6 @@ class ArtistResolver(QObject):
     for album, track, resolver in resolveTracks:
       log.debug(f"call resolve_artists ({artistId}) for  {track['title']} ")
       resolver.resolve_artists(album, track)
-
-  # def process_artists(self, artistCredit):
-  #   processed = []
-
-  #   for credit in artistCredit:
-  #     if ('type' in credit['artist'] and credit['artist']['type'].lower() == 'character') and ('joinphrase' in credit and 'cv' in credit['joinphrase'].lower()):
-  #       continue
-
-  #     processed.append(Artist.create(self, self.album, credit))
-  #   return processed
 
 def track_artist_processor(album, metadata, track, release):
   log.debug(f"start processing {track['title']}, requests: {album._requests}")
