@@ -67,7 +67,6 @@ jobs:
 
     - name: Zip Files
       run: |
-        "${{ needs.build.outputs.version }}"
         cd "${{ github.workspace }}/publish/" 
         zip -r "${{ env.EXTENSION_FILE_NAME }}.zip" .
 
