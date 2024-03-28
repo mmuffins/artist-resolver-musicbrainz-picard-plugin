@@ -1,0 +1,73 @@
+name: Create Release
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+env:
+  EXTENSION_FILE_NAME: artist_resolver 
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Clean up addon directory
+      shell: pwsh
+      run: |
+        Remove-Item -Path "${{ github.workspace }}/.git" -Recurse -Force -Verbose
+        Remove-Item -Path "${{ github.workspace }}/.github" -Recurse -Force -Verbose
+
+    - name: Set version
+      shell: pwsh
+      run: |
+        $scriptFile = '${{ github.workspace }}\artist_resolver.py'
+        $content = Get-Content $scriptFile
+
+        if ($content -match "PLUGIN_VERSION = '(\d+\.\d+)\.(\d+)'") {
+            $majorMinorVersion = $matches[1]
+            $newVersion = "$majorMinorVersion.$env:GITHUB_RUN_NUMBER"
+        } else {
+          throw "Could not find plugin version in script file."
+        }
+
+        Write-Output "Setting version to $newVersion"
+        "VERSION=$newVersion" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+        $content = $content -replace "(PLUGIN_VERSION = ')(\d+\.\d+\.\d+)(')", "`$1$newVersion`$3"
+        $content | Set-Content $infoFile -Force
+    
+    - name: Zip Files
+      run: cd '${{ github.workspace }}' && zip -r ${{ env.EXTENSION_FILE_NAME }}.zip .
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v2
+      with:
+        name: extension
+        path: ${{ github.workspace }}/${{ env.EXTENSION_FILE_NAME }}.zip
+        
+    - name: Create Release
+      uses: actions/create-release@v1
+      id: create_release
+      env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
+      with:
+        tag_name: ${{ env.VERSION }} 
+        release_name: ${{ env.VERSION }} 
+        draft: true
+        prerelease: false
+        
+    - name: Upload Release Asset
+      id: upload-release-asset 
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ${{ github.workspace }}/${{ env.EXTENSION_FILE_NAME }}.zip
+        asset_name: ${{ env.EXTENSION_FILE_NAME }}.zip
+        asset_content_type: application/zip

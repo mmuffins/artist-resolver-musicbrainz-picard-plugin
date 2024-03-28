@@ -3,8 +3,11 @@
 
 PLUGIN_NAME = 'Resolve Artist Relations'
 PLUGIN_AUTHOR = 'mmuffins'
+PLUGIN_LICENSE = "GPL-2.0"
+PLUGIN_LICENSE_URL = "https://www.gnu.org/licenses/gpl-2.0.txt"
 PLUGIN_DESCRIPTION = 'Provides a new property containing a json with artist details and relations.'
-PLUGIN_VERSION = '0.5'
+# The patch version will be automatically replaced by the release action on github
+PLUGIN_VERSION = '1.0.0' 
 PLUGIN_API_VERSIONS = ['2.9', '2.10', '2.11', '3.0']
 
 from picard import log
