@@ -102,5 +102,5 @@ jobs:
             repo: context.repo.repo,
             release_id: '${{ steps.create-release.outputs.id }}',
             data: attachment,
-            name: 'ArtistNormalize${{ env.EXTENSION_FILE_NAME }}r.zip'
+            name: 'ArtistNormalize${{ env.EXTENSION_FILE_NAME }}.zip'
           });
