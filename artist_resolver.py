@@ -13,7 +13,7 @@ PLUGIN_API_VERSIONS = ['2.9', '2.10', '2.11', '3.0']
 from picard import log
 from picard.metadata import register_track_metadata_processor
 from picard.webservice import ratecontrol
-from picard.util import Lock,ableObject
+from picard.util import LockableObject
 from functools import partial
 from PyQt5.QtCore import QObject, pyqtSignal
 import json
@@ -155,7 +155,7 @@ class Artist:
       if relation['direction'].lower() != 'backward':
         continue
 
-      type_id = relation['type_id']
+      type_id = relation['type-id']
       type_name = relation['type']
 
       if type_id not in TRAVERSE_RELATION_TYPES:
