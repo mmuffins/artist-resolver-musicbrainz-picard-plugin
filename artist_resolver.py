@@ -13,14 +13,39 @@ PLUGIN_API_VERSIONS = ['2.9', '2.10', '2.11', '3.0']
 from picard import log
 from picard.metadata import register_track_metadata_processor
 from picard.webservice import ratecontrol
-from picard.util import LockableObject
+from picard.util import Lock,ableObject
 from functools import partial
 from PyQt5.QtCore import QObject, pyqtSignal
 import json
 
 
 MAX_TRAVERSAL_DEPTH = 3
-TRAVERSE_RELATION_TYPES_BLACKLIST = ['subgroup']
+# https://beta.musicbrainz.org/relationships/artist-artist
+TRAVERSE_RELATION_TYPES = {
+  "92859e2a-f2e5-45fa-a680-3f62ba0beccc": {"name": "musical relationships", "allow": False},
+  "5be4c609-9afa-4ea0-910b-12ffb71e3821": {"name": "member of band", "allow": True},
+  "7802f96b-d995-4ce9-8f70-6366faad758e": {"name": "subgroup", "allow": False},
+  "9752bfdf-13ca-441a-a8bc-18928c600c73": {"name": "artist rename", "allow": False},
+  "ab666dde-bd85-4ac2-a209-165eaf4146a0": {"name": "artistic director", "allow": False},
+  "cac01ac7-4159-42fd-9f2b-c5a7a5624079": {"name": "conductor position", "allow": False},
+  "6ed4bfc4-0a0d-44c0-b025-b7fc4d900b67": {"name": "founder", "allow": False},
+  "88562a60-2550-48f0-8e8e-f54d95c7369a": {"name": "supporting musician", "allow": False},
+  "610d39a4-3fa0-4848-a8c9-f46d7b5cc02e": {"name": "vocal supporting musician", "allow": False},
+  "ed6a7891-ce70-4e08-9839-1f2f62270497": {"name": "instrumental supporting musician", "allow": False},
+  "a6f62641-2f58-470e-b02b-88d7b984dc9f": {"name": "tribute", "allow": False},
+  "e259a3f5-ce8e-45c1-9ef7-90ff7d0c7589": {"name": "voice actor", "allow": True},
+  "75c09861-6857-4ec0-9729-84eefde7fc86": {"name": "collaboration", "allow": False},
+  "dd9886f2-1dfe-4270-97db-283f6839a666": {"name": "is person", "allow": False},
+  "249fc24f-d573-4290-9d74-0547712d1f1e": {"name": "teacher", "allow": False},
+  "094b1ddf-3df3-4fb9-8b01-cfd28e45da80": {"name": "composer-in-residence", "allow": False},
+  "e794f8ff-b77b-4dfe-86ca-83197146ef10": {"name": "personal relationship", "allow": False},
+  "9421ca84-934f-49fe-9e66-dea242430406": {"name": "parent", "allow": False},
+  "b42b7966-b904-449e-b8f9-8c7297b863d0": {"name": "sibling", "allow": False},
+  "b2bf7a5d-2da6-4742-baf4-e38d8a7ad029": {"name": "married", "allow": False},
+  "fd3927ba-fd51-4fa9-bcc2-e83637896fe8": {"name": "involved with", "allow": False},
+  "1af24726-5b1f-4b07-826e-5351723f504b": {"name": "named after", "allow": False},
+}
+
 MB_DOMAIN = 'musicbrainz.org'
 ratecontrol.set_minimum_delay(MB_DOMAIN, 1000) # 1 request per second
 
@@ -87,6 +112,7 @@ class Relation:
     self.direction = relation_data.get('direction', '')
     self.targetType = relation_data.get('target-type', '')
     self.type = relation_data.get('type', '')
+    self.type_id = relation_data.get('type-id', '')
     self.id = self.get_target_id(relation_data)
 
   def get_target_id(self, relation_data):
@@ -124,16 +150,22 @@ class Artist:
     result = []
     if relations is None:
       return result
-    
+
     for relation in relations:
       if relation['direction'].lower() != 'backward':
         continue
 
-      if relation['type'] in TRAVERSE_RELATION_TYPES_BLACKLIST:
+      type_id = relation['type_id']
+      type_name = relation['type']
+
+      if type_id not in TRAVERSE_RELATION_TYPES:
+        raise ValueError(f"Type {type_name} with ID {type_id} was not found in TRAVERSE_RELATION_TYPES")
+
+      if TRAVERSE_RELATION_TYPES[type_id]['allow'] == False:
         continue
 
       result.append(Relation(relation))
-    
+
     return result
 
   def to_dict(self, artistCache):
