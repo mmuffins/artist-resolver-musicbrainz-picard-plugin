@@ -80,7 +80,7 @@ jobs:
         zip -r "${{ env.EXTENSION_FILE_NAME }}.zip" .
 
     - name: Create release
-      uses: actions/github-script@v7
+      uses: actions/github-script@v8
       id: create-release
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -99,7 +99,7 @@ jobs:
           core.setOutput("id", newRelease.id)
 
     - name: Upload Release Assets
-      uses: actions/github-script@v7
+      uses: actions/github-script@v8
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
         script: |
