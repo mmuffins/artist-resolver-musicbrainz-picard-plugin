@@ -55,7 +55,7 @@ jobs:
         $content | Set-Content $scriptFile -Force
     
     - name: Upload artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
       with:
         name: plugin
         path: ${{ github.workspace }}
