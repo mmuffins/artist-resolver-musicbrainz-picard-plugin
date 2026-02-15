@@ -1,4 +1,5 @@
-# The patch version will be automatically replaced by the release action on github
+# The patch version will be automatically replaced by
+# the release action on github
 
 from picard.plugin3.api import PluginApi
 
@@ -10,6 +11,15 @@ import json
 
 
 MAX_TRAVERSAL_DEPTH = 3
+_plugin_api = None
+
+
+def _get_api():
+  if _plugin_api is not None:
+    return _plugin_api
+  return PluginApi.get_api()
+
+
 # https://beta.musicbrainz.org/relationships/artist-artist
 TRAVERSE_RELATION_TYPES = {
   "92859e2a-f2e5-45fa-a680-3f62ba0beccc": {"name": "musical relationships", "allow": False},
@@ -37,7 +47,7 @@ TRAVERSE_RELATION_TYPES = {
 }
 
 MB_DOMAIN = 'musicbrainz.org'
-ratecontrol.set_minimum_delay(MB_DOMAIN, 1000) # 1 request per second
+ratecontrol.set_minimum_delay(MB_DOMAIN, 1000)  # 1 request per second
 
 class WebrequestQueue(LockableObject):
     def __init__(self):
@@ -109,7 +119,7 @@ class Relation:
     if 'artist' in relation_data:
       return relation_data['artist']['id']
     
-    api.logger.error(f"Relation of type {self.type} with target type {self.targetType} has no artist property.")
+    _get_api().logger.error(f"Relation of type {self.type} with target type {self.targetType} has no artist property.")
     return ''
 
 class Artist:
@@ -178,8 +188,9 @@ class ArtistResolver(QObject):
   artist_queue = WebrequestQueue()
   artist_cache = {}
 
-  def __init__(self):
+  def __init__(self, api):
     super().__init__()
+    self.api = api
 
   def get_track_artists(self, album, track):
     result = []
@@ -223,21 +234,21 @@ class ArtistResolver(QObject):
   def resolve_artists(self, album, track):
     if self.artist_queue.hasTrack(album, track):
       # Only proceed to check if all artists are resolved if no artists for this track are in the lookup queue
-      api.logger.debug(f"resolve_artists {track['title']}: skipping due to open items in queue")
+      self.api.logger.debug(f"resolve_artists {track['title']}: skipping due to open items in queue")
       return
 
-    api.logger.debug(f"resolve_artists {track['title']}")
+    self.api.logger.debug(f"resolve_artists {track['title']}")
 
     if False == self.all_artists_resolved(album, track):
         return False
     
-    api.logger.debug(f"Finished resolving artists for track {track['title']} in {album.id}")
+    self.api.logger.debug(f"Finished resolving artists for track {track['title']} in {album.id}")
 
     resolved_artists = self.serialize_track_artists(album, track)
     self.finished.emit(resolved_artists)
   
   def get_artist_relations(self, album, track, artistId):
-    api.logger.debug(f"get_artist_relations {track['title']}, {artistId}")
+    self.api.logger.debug(f"get_artist_relations {track['title']}, {artistId}")
 
     result = None
     if (artistId not in self.artist_cache):
@@ -251,54 +262,60 @@ class ArtistResolver(QObject):
     return result
 
   def get_artist_details(self, album, track, artistId):
-    api.logger.debug(f"get_artist_details {track['title']}, {artistId}")
+    self.api.logger.debug(f"get_artist_details {track['title']}, {artistId}")
 
     url = f"https://{MB_DOMAIN}/ws/2/artist/{artistId}/?inc=artist-rels+aliases&fmt=json"
 
     if self.artist_queue.append(artistId, (album, track, self)):
-      api.logger.debug(f"call webrequest self:{id(self)} {track['title']}, {artistId}")
-      album.tagger.webservice.get_url(url=url, handler=partial(self.process_artist_request_response, artistId))
+      self.api.logger.debug(f"call webrequest self:{id(self)} {track['title']}, {artistId}")
+      task_id = f"artist_lookup_{album.id}_{artistId}"
 
-  def process_artist_request_response(self, artistId, response, reply, error):
-    if error:
-      api.logger.error("Error fetching artist details: %s", error)
-      return
-    
-    api.logger.debug(f"process_artist_request_response self:{id(self)}, {artistId}")
+      def create_request():
+        return self.api.web_service.get_url(
+            url=url,
+            handler=partial(self.process_artist_request_response, artistId, album, task_id),
+        )
 
-    artist = Artist.create(response)
-    self.artist_cache[artistId] = artist
-    resolveTracks = self.artist_queue.remove(artistId)
+      self.api.add_album_task(
+          album,
+          task_id,
+          f"Fetching artist relations for {artistId}",
+          request_factory=create_request,
+      )
 
-    for album, track, resolver in resolveTracks:
-      api.logger.debug(f"call resolve_artists ({artistId}) for  {track['title']} ")
-      resolver.resolve_artists(album, track)
+  def process_artist_request_response(self, artistId, album, task_id, response, reply, error):
+    resolveTracks = self.artist_queue.remove(artistId) or []
+    try:
+      if error:
+        self.api.logger.error("Error fetching artist details: %s", error)
+        return
+
+      self.api.logger.debug(f"process_artist_request_response self:{id(self)}, {artistId}")
+
+      artist = Artist.create(response)
+      self.artist_cache[artistId] = artist
+
+      for queued_album, track, resolver in resolveTracks:
+        self.api.logger.debug(f"call resolve_artists ({artistId}) for  {track['title']} ")
+        resolver.resolve_artists(queued_album, track)
+    finally:
+      self.api.complete_album_task(album, task_id)
 
 def track_artist_processor(api, track, metadata, track_node, release_node):
-  api.logger.debug(f"start processing {track['title']}, requests: {album._requests}")
-  resolver = ArtistResolver()
-  album._requests += 1
-  resolver.finished.connect(lambda resolved_artists: track_finished(resolved_artists, metadata, track, album))
+  album = track.album
+  api.logger.debug(f"start processing {track['title']}")
+  resolver = ArtistResolver(api)
+  resolver.finished.connect(lambda resolved_artists: track_finished(api, resolved_artists, metadata, track, album))
   resolver.resolve_artists(album, track)
 
-def track_finished(resolved_artists, metadata, track, album):
+def track_finished(api, resolved_artists, metadata, track, album):
   api.logger.debug(f"process_finished {track['title']} in {album.id}")
 
   metadata['artist_relations_json'] = resolved_artists
-  album._requests -= 1
-
-  api.logger.debug(f"albumrequests count {album._requests}") 
-  # Workaround for an endless loop where no artist data needs to be retrieved
-  # If finalize_loading is called before tracks are loaded, which is likely
-  # to happen if the plugin doesn't need to load any data and therefore finishes immediately,
-  # it will try to load the tracks again, which calls register_track_metadata_processor,
-  # triggering an endless loop
-  # I can't also remove it since it's needed for long running relation lookups because it tells
-  # the application that everything is finished
-  if album._tracks_loaded:
-    album._finalize_loading(None)
 
 
 def enable(api: PluginApi):
     """Called when plugin is enabled."""
+    global _plugin_api
+    _plugin_api = api
     api.register_track_metadata_processor(track_artist_processor)

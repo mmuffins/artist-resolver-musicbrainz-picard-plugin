@@ -2,6 +2,7 @@ uuid = "684e2181-d43e-4b23-940e-eb10d26ed9f4"
 name = "Resolve Artist Relations"
 authors = ["mmuffins"]
 description = "Provides a new property containing a json with artist details and relations."
+version = "2.0.0"
 api = ['3.0']
 license = "GPL-2.0"
 license_url = "https://www.gnu.org/licenses/gpl-2.0.txt"
