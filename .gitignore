@@ -5,9 +5,13 @@
 .vscode/
 
 # virtualenv
+
+.python-version
+
+# Environments and development tools
 .venv
 venv/
-.python-version
+.ruff_cache/
 
 # OS generated files
 .DS_Store
@@ -46,3 +50,7 @@ win-version-info.txt
 appledev.p12
 build.cfg
 .weblate.ini
+
+# Byte-compiled / optimized / DLL files
+*.py[cod]
+__pycache__/
