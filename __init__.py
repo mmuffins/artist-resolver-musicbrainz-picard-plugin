@@ -4,7 +4,7 @@
 from picard.plugin3.api import PluginApi
 
 from picard.webservice import ratecontrol
-from picard.util import LockableObject
+from picard.util import ReadWriteLockContext
 from functools import partial
 from PyQt6.QtCore import QObject, pyqtSignal
 import json
@@ -49,41 +49,37 @@ TRAVERSE_RELATION_TYPES = {
 MB_DOMAIN = 'musicbrainz.org'
 ratecontrol.set_minimum_delay(MB_DOMAIN, 1000)  # 1 request per second
 
-class WebrequestQueue(LockableObject):
+
+class WebrequestQueue:
     def __init__(self):
-        LockableObject.__init__(self)
+        self._lock = ReadWriteLockContext()
         self.queue = {}
 
     def __contains__(self, name):
-        return name in self.queue
+        with self._lock.lock_for_read():
+            return name in self.queue
 
     def __getitem__(self, name):
-        self.lock_for_read()
-        try:
+        with self._lock.lock_for_read():
             return self.queue.get(name)
-        finally:
-            self.unlock()
 
     def __setitem__(self, name, value):
-        self.lock_for_write()
-        try:
+        with self._lock.lock_for_write():
             self.queue[name] = value
-        finally:
-            self.unlock()
 
-    def hasTrack(self, album, track):
-      for artistId in self.queue:
-        queueItems = self.queue[artistId]
-        if any(sublist[0].id == album.id and sublist[1]['id'] == track['id'] for sublist in queueItems if len(sublist) > 1):
-          return True
-      return False
+    def hasTrack(self, album, track_node):
+      with self._lock.lock_for_read():
+        for artistId in self.queue:
+          queueItems = self.queue[artistId]
+          if any(sublist[0].id == album.id and sublist[2]['id'] == track_node['id'] for sublist in queueItems if len(sublist) > 2):
+            return True
+        return False
 
     def append(self, name, value):
-        self.lock_for_write()
-        try:
+        with self._lock.lock_for_write():
             if name in self.queue:
                 queueItems = self.queue[name]
-                if not any(sublist[0].id == value[0].id and sublist[1]['id'] == value[1]['id'] for sublist in queueItems if len(sublist) > 1):
+                if not any(sublist[0].id == value[0].id and sublist[2]['id'] == value[2]['id'] for sublist in queueItems if len(sublist) > 2):
                   # Only enqueue a new item if the album and track id doesn't already exist in the queue
                   self.queue[name].append(value)
                 
@@ -92,19 +88,14 @@ class WebrequestQueue(LockableObject):
                 self.queue[name] = [value]
                 value = True
             return value
-        finally:
-            self.unlock()
 
     def remove(self, name):
-      self.lock_for_write()
-      value = None
-      try:
+      with self._lock.lock_for_write():
+        value = None
         if name in self.queue:
           value = self.queue[name]
           del self.queue[name]
         return value
-      finally:
-        self.unlock()
 
 class Relation:
   def __init__(self, relation_data):
@@ -192,9 +183,25 @@ class ArtistResolver(QObject):
     super().__init__()
     self.api = api
 
-  def get_track_artists(self, album, track):
+  def resume_album_loading(self, album):
+    if not album.loaded:
+      album._finalize_loading(None)
+
+  def get_track_title(self, track, track_node):
+    return track_node.get('title') or track.metadata['title']
+
+  def get_track_id(self, track, track_node):
+    return track_node.get('id') or track.id
+
+  def get_track_artist_credit(self, track_node):
+    return track_node.get('artist-credit') or track_node.get('recording', {}).get('artist-credit', [])
+
+  def get_artist_task_id(self, album, track, track_node, artistId):
+    return f"artist_lookup_{album.id}_{self.get_track_id(track, track_node)}_{artistId}"
+
+  def get_track_artists(self, album, track, track_node):
     result = []
-    for credit in track['artist-credit']:
+    for credit in self.get_track_artist_credit(track_node):
       if ('artist' in credit):
         result.append(credit['artist']['id'])
     return result
@@ -210,65 +217,67 @@ class ArtistResolver(QObject):
     
     return True
 
-  def serialize_track_artists(self, album, track):
+  def serialize_track_artists(self, album, track, track_node):
     trackArtists = []
-    for credit in track['artist-credit']:
+    for credit in self.get_track_artist_credit(track_node):
       artistObj = self.artist_cache[credit['artist']['id']].to_dict(self.artist_cache)
-      artistObj['joinphrase'] = credit['joinphrase']
+      artistObj['joinphrase'] = credit.get('joinphrase', '')
       trackArtists.append(artistObj)
 
     return json.dumps(trackArtists, ensure_ascii=False)
   
-  def all_artists_resolved(self, album, track):
+  def all_artists_resolved(self, album, track, track_node):
     result = []
-    track_artist_ids = self.get_track_artists(album, track)
+    track_artist_ids = self.get_track_artists(album, track, track_node)
     for artistId in track_artist_ids:
-      result.append(self.get_artist_relations(album, track, artistId))
+      result.append(self.get_artist_relations(album, track, track_node, artistId))
     
     for artist in result:
         if False == self.is_artist_resolved(artist):
             return False
 
     return True
+  
+  def resolve_artists(self, album, track, track_node):
+    track_title = self.get_track_title(track, track_node)
 
-  def resolve_artists(self, album, track):
-    if self.artist_queue.hasTrack(album, track):
+    if self.artist_queue.hasTrack(album, track_node):
       # Only proceed to check if all artists are resolved if no artists for this track are in the lookup queue
-      self.api.logger.debug(f"resolve_artists {track['title']}: skipping due to open items in queue")
+      self.api.logger.debug(f"resolve_artists {track_title}: skipping due to open items in queue")
       return
 
-    self.api.logger.debug(f"resolve_artists {track['title']}")
+    self.api.logger.debug(f"resolve_artists {track_title}")
 
-    if False == self.all_artists_resolved(album, track):
+    if False == self.all_artists_resolved(album, track, track_node):
         return False
     
-    self.api.logger.debug(f"Finished resolving artists for track {track['title']} in {album.id}")
+    self.api.logger.debug(f"Finished resolving artists for track {track_title} in {album.id}")
 
-    resolved_artists = self.serialize_track_artists(album, track)
+    resolved_artists = self.serialize_track_artists(album, track, track_node)
     self.finished.emit(resolved_artists)
   
-  def get_artist_relations(self, album, track, artistId):
-    self.api.logger.debug(f"get_artist_relations {track['title']}, {artistId}")
+  def get_artist_relations(self, album, track, track_node, artistId):
+    self.api.logger.debug(f"get_artist_relations {self.get_track_title(track, track_node)}, {artistId}")
 
     result = None
     if (artistId not in self.artist_cache):
-      self.get_artist_details(album, track, artistId)
+      self.get_artist_details(album, track, track_node, artistId)
       return result
     
     result = self.artist_cache[artistId]
     for relation in result.relations:
       if relation.artist != []:
-        relation.artist = self.get_artist_relations(album, track, relation.id)
+        relation.artist = self.get_artist_relations(album, track, track_node, relation.id)
     return result
 
-  def get_artist_details(self, album, track, artistId):
-    self.api.logger.debug(f"get_artist_details {track['title']}, {artistId}")
+  def get_artist_details(self, album, track, track_node, artistId):
+    self.api.logger.debug(f"get_artist_details {self.get_track_title(track, track_node)}, {artistId}")
 
     url = f"https://{MB_DOMAIN}/ws/2/artist/{artistId}/?inc=artist-rels+aliases&fmt=json"
+    task_id = self.get_artist_task_id(album, track, track_node, artistId)
 
-    if self.artist_queue.append(artistId, (album, track, self)):
-      self.api.logger.debug(f"call webrequest self:{id(self)} {track['title']}, {artistId}")
-      task_id = f"artist_lookup_{album.id}_{artistId}"
+    if self.artist_queue.append(artistId, (album, track, track_node, self, task_id)):
+      self.api.logger.debug(f"call webrequest self:{id(self)} {self.get_track_title(track, track_node)}, {artistId}")
 
       def create_request():
         return self.api.web_service.get_url(
@@ -281,6 +290,16 @@ class ArtistResolver(QObject):
           task_id,
           f"Fetching artist relations for {artistId}",
           request_factory=create_request,
+          timeout=30.0,
+          blocking=True,
+      )
+    else:
+      self.api.add_album_task(
+          album,
+          task_id,
+          f"Waiting for shared artist relations request for {artistId}",
+          timeout=30.0,
+          blocking=True,
       )
 
   def process_artist_request_response(self, artistId, album, task_id, response, reply, error):
@@ -295,21 +314,28 @@ class ArtistResolver(QObject):
       artist = Artist.create(response)
       self.artist_cache[artistId] = artist
 
-      for queued_album, track, resolver in resolveTracks:
-        self.api.logger.debug(f"call resolve_artists ({artistId}) for  {track['title']} ")
-        resolver.resolve_artists(queued_album, track)
+      for queued_album, track, track_node, resolver, queued_task_id in resolveTracks:
+        self.api.logger.debug(f"call resolve_artists ({artistId}) for {resolver.get_track_title(track, track_node)}")
+        resolver.resolve_artists(queued_album, track, track_node)
     finally:
-      self.api.complete_album_task(album, task_id)
+      if not resolveTracks:
+        self.api.complete_album_task(album, task_id)
+        self.resume_album_loading(album)
+        return
+
+      for queued_album, _track, _track_node, resolver, queued_task_id in resolveTracks:
+        resolver.api.complete_album_task(queued_album, queued_task_id)
+        resolver.resume_album_loading(queued_album)
 
 def track_artist_processor(api, track, metadata, track_node, release_node):
   album = track.album
-  api.logger.debug(f"start processing {track['title']}")
+  api.logger.debug(f"start processing {track_node.get('title') or metadata['title']}")
   resolver = ArtistResolver(api)
   resolver.finished.connect(lambda resolved_artists: track_finished(api, resolved_artists, metadata, track, album))
-  resolver.resolve_artists(album, track)
+  resolver.resolve_artists(album, track, track_node)
 
 def track_finished(api, resolved_artists, metadata, track, album):
-  api.logger.debug(f"process_finished {track['title']} in {album.id}")
+  api.logger.debug(f"process_finished {metadata['title']} in {album.id}")
 
   metadata['artist_relations_json'] = resolved_artists
 
