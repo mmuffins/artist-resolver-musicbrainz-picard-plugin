@@ -24,7 +24,7 @@ jobs:
       version: ${{ steps.set-version.outputs.VERSION }}
     
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
 
     - name: Clean up addon directory
       shell: pwsh
