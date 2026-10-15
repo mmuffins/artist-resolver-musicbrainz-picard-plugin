@@ -37,22 +37,22 @@ jobs:
       id: set-version
       shell: pwsh
       run: |
-        $scriptFile = '${{ github.workspace }}\artist_resolver.py'
-        $content = Get-Content $scriptFile -Raw
+        $manifestFile = Join-Path '${{ github.workspace }}' 'MANIFEST.toml'
+        $content = Get-Content $manifestFile -Raw
 
-        if ($content -match "PLUGIN_VERSION = '(\d+\.\d+)\.(\d+)'") {
+        if ($content -match '(?m)^version\s*=\s*"(\d+\.\d+)\.\d+"\s*$') {
             $majorMinorVersion = $matches[1]
             $newVersion = "$majorMinorVersion.$env:GITHUB_RUN_NUMBER"
         } else {
-          throw "Could not find plugin version in script file."
+          throw "Could not find plugin version in MANIFEST.toml."
         }
 
         Write-Output "Setting version to $newVersion"
         "VERSION=$newVersion" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
         "VERSION=$newVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
-        $content = $content -replace "(PLUGIN_VERSION = '\d+\.\d+\.\d+')", "PLUGIN_VERSION =`'$newVersion`'"
-        $content | Set-Content $scriptFile -Force
+        $content = $content -replace '(?m)^(version\s*=\s*)"\d+\.\d+\.\d+"\s*$', "`$1`"$newVersion`""
+        $content | Set-Content $manifestFile -Force
     
     - name: Upload artifact
       uses: actions/upload-artifact@v6
