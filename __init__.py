@@ -4,7 +4,7 @@
 from picard.plugin3.api import PluginApi
 
 from picard.webservice import ratecontrol
-from picard.util import ReadWriteLockContext
+from picard.util.qt import ReadWriteLockContext
 from functools import partial
 from PyQt6.QtCore import QObject, pyqtSignal
 import json
