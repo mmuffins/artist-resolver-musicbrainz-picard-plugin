@@ -79,15 +79,19 @@ class WebrequestQueue:
         with self._lock.lock_for_write():
             if name in self.queue:
                 queueItems = self.queue[name]
-                if not any(sublist[0].id == value[0].id and sublist[2]['id'] == value[2]['id'] for sublist in queueItems if len(sublist) > 2):
-                  # Only enqueue a new item if the album and track id doesn't already exist in the queue
-                  self.queue[name].append(value)
-                
-                value = False
-            else:
-                self.queue[name] = [value]
-                value = True
-            return value
+                waiter_exists = any(
+                    sublist[0].id == value[0].id and sublist[2]['id'] == value[2]['id']
+                    for sublist in queueItems
+                    if len(sublist) > 2
+                )
+                if waiter_exists:
+                    return False, False
+
+                self.queue[name].append(value)
+                return False, True
+
+            self.queue[name] = [value]
+            return True, True
 
     def remove(self, name):
       with self._lock.lock_for_write():
@@ -276,7 +280,14 @@ class ArtistResolver(QObject):
     url = f"https://{MB_DOMAIN}/ws/2/artist/{artistId}/?inc=artist-rels+aliases&fmt=json"
     task_id = self.get_artist_task_id(album, track, track_node, artistId)
 
-    if self.artist_queue.append(artistId, (album, track, track_node, self, task_id)):
+    request_is_new, waiter_was_added = self.artist_queue.append(
+        artistId,
+        (album, track, track_node, self, task_id),
+    )
+    if not waiter_was_added:
+      return
+
+    if request_is_new:
       self.api.logger.debug(f"call webrequest self:{id(self)} {self.get_track_title(track, track_node)}, {artistId}")
 
       def create_request():
