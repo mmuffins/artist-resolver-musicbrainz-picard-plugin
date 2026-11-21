@@ -187,10 +187,6 @@ class ArtistResolver(QObject):
     super().__init__()
     self.api = api
 
-  def resume_album_loading(self, album):
-    if not album.loaded:
-      album._finalize_loading(None)
-
   def get_track_title(self, track, track_node):
     return track_node.get('title') or track.metadata['title']
 
@@ -331,12 +327,10 @@ class ArtistResolver(QObject):
     finally:
       if not resolveTracks:
         self.api.complete_album_task(album, task_id)
-        self.resume_album_loading(album)
         return
 
       for queued_album, _track, _track_node, resolver, queued_task_id in resolveTracks:
         resolver.api.complete_album_task(queued_album, queued_task_id)
-        resolver.resume_album_loading(queued_album)
 
 def track_artist_processor(api, track, metadata, track_node, release_node):
   album = track.album
